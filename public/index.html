@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>WebRTC CCTV</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;padding:40px 20px}
+  h1{font-size:32px;font-weight:700;text-align:center;letter-spacing:-0.5px}
+  p{color:#555;font-size:15px;text-align:center;max-width:340px;line-height:1.6}
+  .cards{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
+  a.card{display:flex;flex-direction:column;align-items:center;gap:12px;padding:36px 44px;border-radius:20px;border:1px solid #1e1e1e;background:#111;text-decoration:none;color:#fff;transition:border-color .2s,background .2s}
+  a.card:hover{border-color:#333;background:#161616}
+  .icon{font-size:52px}
+  .label{font-size:20px;font-weight:600}
+  .desc{font-size:13px;color:#555;text-align:center}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e;margin-right:6px;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+<h1>📡 CCTV Live</h1>
+<p>Ultra low-latency streaming — works on any network including mobile data + college WiFi</p>
+<div class="cards">
+  <a class="card" href="/sender.html">
+    <span class="icon">📱</span>
+    <span class="label">Sender</span>
+    <span class="desc">Open on your phone<br/>(any network / 4G / 5G)</span>
+  </a>
+  <a class="card" href="/viewer.html">
+    <span class="icon">💻</span>
+    <span class="label">Viewer</span>
+    <span class="desc">Open on your laptop<br/>(college WiFi works)</span>
+  </a>
+</div>
+<p style="font-size:12px;color:#333"><span class="dot"></span>WebRTC + TURN — firewall proof</p>
+</body>
+</html>

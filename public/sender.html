@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CCTV Sender 📱</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0a0a;color:#fff;font-family:system-ui,sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+  h1{font-size:20px;font-weight:700;margin-bottom:4px}
+  .sub{font-size:13px;color:#555;margin-bottom:20px}
+  .row{display:flex;gap:10px;width:100%;max-width:420px;margin-bottom:14px}
+  input{flex:1;padding:11px 14px;border-radius:12px;border:1px solid #222;background:#111;color:#fff;font-size:15px;outline:none}
+  input:focus{border-color:#444}
+  button{padding:11px 20px;border-radius:12px;border:none;background:#2563eb;color:#fff;font-weight:700;font-size:15px;cursor:pointer;white-space:nowrap}
+  button:active{opacity:.8}
+  button.gray{background:#1a1a1a;border:1px solid #2a2a2a;font-weight:500}
+  video{width:100%;max-width:420px;border-radius:16px;background:#111;aspect-ratio:16/9;object-fit:cover;margin-bottom:14px}
+  .badges{width:100%;max-width:420px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .badge{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:700}
+  .green{background:#14532d;color:#4ade80}
+  .yellow{background:#422006;color:#fbbf24}
+  .red{background:#450a0a;color:#f87171}
+  .blue{background:#1e3a5f;color:#60a5fa}
+  .purple{background:#2e1065;color:#c084fc}
+  .stats{width:100%;max-width:420px;background:#111;border-radius:12px;padding:12px 16px;font-size:12px;color:#444;margin-bottom:12px;line-height:2.2}
+  .stats span{color:#888}
+  .sharebox{width:100%;max-width:420px;background:#111;border:1px solid #1e1e1e;border-radius:12px;padding:14px 16px;margin-top:4px}
+  .sharebox p{font-size:12px;color:#555;margin-bottom:6px}
+  .shareurl{font-size:13px;color:#60a5fa;word-break:break-all;cursor:pointer}
+  .shareurl:hover{text-decoration:underline}
+  .btnrow{width:100%;max-width:420px;display:flex;gap:10px;margin-bottom:10px}
+  .btnrow button{flex:1;font-size:14px;padding:10px}
+</style>
+</head>
+<body>
+
+<h1>📱 CCTV Sender</h1>
+<p class="sub">Stream from your phone camera</p>
+
+<div class="row">
+  <input id="roomId" placeholder="Room ID  e.g.  home123"/>
+  <button id="startBtn" onclick="startStream()">Go Live</button>
+</div>
+
+<video id="localVideo" autoplay muted playsinline></video>
+
+<div class="badges">
+  <span class="badge yellow" id="connStatus">● Waiting</span>
+  <span class="badge blue" id="viewerCount">👁 0 viewers</span>
+  <span class="badge purple" id="networkBadge">📡 TURN ready</span>
+</div>
+
+<div class="btnrow">
+  <button class="gray" onclick="flipCamera()">🔄 Flip Camera</button>
+  <button class="gray" onclick="copyShareLink()">🔗 Copy Link</button>
+</div>
+
+<div class="stats">
+  Bitrate: <span id="bitrate">—</span> &nbsp;|&nbsp;
+  FPS: <span id="fps">—</span> &nbsp;|&nbsp;
+  Res: <span id="res">—</span> &nbsp;|&nbsp;
+  Viewers: <span id="vcount">0</span>
+</div>
+
+<div class="sharebox" id="shareBox" style="display:none">
+  <p>📋 Send this link to your viewer (laptop):</p>
+  <div class="shareurl" id="shareUrl" onclick="copyShareLink()"></div>
+</div>
+
+<!-- ==========================================
+     SOCKET.IO — loaded from your Railway server
+     ========================================== -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+
+// ============================================================
+//  ICE CONFIG — TURN servers so college firewall is bypassed
+//  Works on: mobile data ↔ college WiFi, different networks
+// ============================================================
+const ICE_CONFIG = {
+  iceServers: [
+    // STUN — free, finds your public IP
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+
+    // TURN port 80 — relay fallback
+    {
+      urls: "turn:openrelay.metered.ca:80",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    // TURN port 443 — works on most firewalls
+    {
+      urls: "turn:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    },
+    // TURNS (TLS) port 443 — bypasses almost ALL firewalls
+    // College networks allow this because it looks like HTTPS
+    {
+      urls: "turns:openrelay.metered.ca:443",
+      username: "openrelayproject",
+      credential: "openrelayproject"
+    }
+  ]
+};
+
+const socket = io(window.location.origin);
+
+let localStream = null;
+let peers = {};
+let facingMode = "environment";
+let statsInterval = null;
+
+async function startStream() {
+  const roomId = document.getElementById("roomId").value.trim();
+  if (!roomId) {
+    alert("Please enter a Room ID first");
+    return;
+  }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode,
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 }
+      },
+      audio: true
+    });
+
+    document.getElementById("localVideo").srcObject = localStream;
+
+    const track = localStream.getVideoTracks()[0];
+    const s = track.getSettings();
+    document.getElementById("res").textContent = `${s.width || "—"}x${s.height || "—"}`;
+
+    socket.emit("join-room", roomId, "sender");
+
+    setStatus("🟢 Live", "green");
+    document.getElementById("startBtn").textContent = "✓ Live";
+    document.getElementById("startBtn").style.background = "#16a34a";
+
+    const viewerUrl = `${window.location.origin}/viewer.html?room=${roomId}`;
+    document.getElementById("shareBox").style.display = "block";
+    document.getElementById("shareUrl").textContent = viewerUrl;
+
+    startStatsLoop();
+
+  } catch (e) {
+    alert("Camera error: " + e.message);
+  }
+}
+
+socket.on("viewer-joined", async (viewerId) => {
+  console.log("Viewer joined:", viewerId);
+  const pc = createPeer(viewerId);
+  peers[viewerId] = pc;
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit("offer", { offer, to: viewerId });
+
+  updateViewerCount();
+});
+
+socket.on("answer", async ({ answer, from }) => {
+  const pc = peers[from];
+  if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on("candidate", async ({ candidate, from }) => {
+  const pc = peers[from];
+  if (pc) {
+    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e) {}
+  }
+});
+
+socket.on("room-info", ({ viewers }) => {
+  document.getElementById("viewerCount").textContent = `👁 ${viewers} viewer${viewers !== 1 ? "s" : ""}`;
+  document.getElementById("vcount").textContent = viewers;
+});
+
+function createPeer(viewerId) {
+  const pc = new RTCPeerConnection(ICE_CONFIG);
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) socket.emit("candidate", { candidate: e.candidate, to: viewerId });
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    console.log("ICE:", pc.iceConnectionState);
+    if (pc.iceConnectionState === "connected") {
+      document.getElementById("networkBadge").textContent = "✅ Connected";
+      document.getElementById("networkBadge").className = "badge green";
+    }
+    if (["disconnected","failed","closed"].includes(pc.iceConnectionState)) {
+      delete peers[viewerId];
+      updateViewerCount();
+    }
+  };
+
+  return pc;
+}
+
+async function flipCamera() {
+  facingMode = facingMode === "environment" ? "user" : "environment";
+  if (!localStream) return;
+
+  localStream.getTracks().forEach(t => t.stop());
+  localStream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+    audio: true
+  });
+  document.getElementById("localVideo").srcObject = localStream;
+
+  for (const pc of Object.values(peers)) {
+    const senders = pc.getSenders();
+    const newTrack = localStream.getVideoTracks()[0];
+    const vs = senders.find(s => s.track && s.track.kind === "video");
+    if (vs) vs.replaceTrack(newTrack);
+  }
+}
+
+function copyShareLink() {
+  const roomId = document.getElementById("roomId").value.trim();
+  if (!roomId) { alert("Start streaming first"); return; }
+  const url = `${window.location.origin}/viewer.html?room=${roomId}`;
+  navigator.clipboard.writeText(url).then(() => alert("Link copied! Send to viewer."));
+}
+
+function updateViewerCount() {
+  const count = Object.keys(peers).length;
+  document.getElementById("viewerCount").textContent = `👁 ${count} viewer${count !== 1 ? "s" : ""}`;
+  document.getElementById("vcount").textContent = count;
+}
+
+function setStatus(text, color) {
+  const el = document.getElementById("connStatus");
+  el.textContent = text;
+  el.className = "badge " + color;
+}
+
+async function startStatsLoop() {
+  statsInterval = setInterval(async () => {
+    for (const pc of Object.values(peers)) {
+      try {
+        const stats = await pc.getStats();
+        stats.forEach(r => {
+          if (r.type === "outbound-rtp" && r.kind === "video") {
+            const kbps = Math.round((r.bytesSent * 8) / 1000 / (r.timestamp / 1000));
+            document.getElementById("bitrate").textContent = kbps + " kbps";
+            document.getElementById("fps").textContent = Math.round(r.framesPerSecond || 0) + " fps";
+          }
+        });
+      } catch(e) {}
+    }
+  }, 2000);
+}
+
+</script>
+</body>
+</html>
